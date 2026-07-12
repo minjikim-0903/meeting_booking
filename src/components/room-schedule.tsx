@@ -28,14 +28,14 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { ALL_TEAMS, ParticipantPicker } from "@/components/participant-picker"
+import { ParticipantPicker } from "@/components/participant-picker"
 import { DateRangeNav } from "@/components/date-range-nav"
 import {
   bookings as seedBookings,
   formatDayLabel,
   getDateRangeDays,
   getDefaultDateRange,
-  getNextWeekdays,
+  getCurrentWeekdays,
   rooms,
   type Booking,
   type Room,
@@ -169,7 +169,7 @@ export function RoomSchedule() {
   const [coordinationMessage, setCoordinationMessage] = useState("")
   const [coordinationSubmitted, setCoordinationSubmitted] = useState(false)
 
-  const [selectedTeam, setSelectedTeam] = useState<string>(ALL_TEAMS)
+  const [selectedTeams, setSelectedTeams] = useState<string[]>([])
   const [participantSearch, setParticipantSearch] = useState("")
   // 예약자(나)는 항상 자신이 초대한 회의의 참석자이기도 하므로 기본 선택.
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<
@@ -210,16 +210,17 @@ export function RoomSchedule() {
     })
   }
 
-  function handleTeamChange(team: string) {
-    setSelectedTeam(team)
-    // Picking a specific team should be enough on its own to see that
-    // team's room availability — auto-select all of its members instead
-    // of requiring each person to be checked individually.
-    if (team !== ALL_TEAMS) {
-      const teamMemberIds = people
-        .filter((person) => person.team === team)
+  function handleTeamsChange(teams: string[]) {
+    // Newly added teams should be enough on their own to see that team's
+    // room availability — auto-select all of their members instead of
+    // requiring each person to be checked individually.
+    const addedTeams = teams.filter((t) => !selectedTeams.includes(t))
+    setSelectedTeams(teams)
+    if (addedTeams.length > 0) {
+      const newMemberIds = people
+        .filter((person) => addedTeams.includes(person.team))
         .map((person) => person.id)
-      setSelectedParticipantIds((prev) => new Set([...prev, ...teamMemberIds]))
+      setSelectedParticipantIds((prev) => new Set([...prev, ...newMemberIds]))
     }
   }
 
@@ -245,7 +246,7 @@ export function RoomSchedule() {
     if (dateRange?.from && dateRange?.to) {
       return getDateRangeDays(dateRange.from, dateRange.to)
     }
-    return getNextWeekdays()
+    return getCurrentWeekdays()
   }, [dateRange])
 
   // 지난 날짜는 회의실 예약이 불가능하므로 비활성화 기준으로 쓴다.
@@ -503,12 +504,19 @@ export function RoomSchedule() {
                   ))}
                 </SelectContent>
               </Select>
+              {room && selectedPeople.length > room.capacity && (
+                <p className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+                  선택한 참석자가 {selectedPeople.length}명으로 이 회의실 수용
+                  인원({room.capacity}명)을 초과했습니다. 더 큰 회의실을
+                  선택해주세요.
+                </p>
+              )}
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col gap-3">
               <ParticipantPicker
-                selectedTeam={selectedTeam}
-                onTeamChange={handleTeamChange}
+                selectedTeams={selectedTeams}
+                onTeamsChange={handleTeamsChange}
                 search={participantSearch}
                 onSearchChange={setParticipantSearch}
                 selectedParticipantIds={selectedParticipantIds}
@@ -1116,6 +1124,14 @@ export function RoomSchedule() {
                   </div>
                 </div>
 
+                {selectedPeople.length > selection.room.capacity && (
+                  <p className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+                    선택한 참석자가 {selectedPeople.length}명으로 {selection.room.name}{" "}
+                    수용 인원({selection.room.capacity}명)을 초과했습니다. 더 큰
+                    회의실을 선택해주세요.
+                  </p>
+                )}
+
                 <p className="text-sm font-medium">참석자 일정 확인</p>
                 {selectedPeople.length === 0 ? (
                   <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
@@ -1177,7 +1193,8 @@ export function RoomSchedule() {
               disabled={
                 selectedPeople.length === 0 ||
                 !meetingPurpose.trim() ||
-                requestSubmitting
+                requestSubmitting ||
+                (!!selection && selectedPeople.length > selection.room.capacity)
               }
               onClick={handleSubmitBookingRequest}
             >

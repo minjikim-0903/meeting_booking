@@ -85,7 +85,7 @@ export function formatDayLabel(d: Date): string {
   return `${d.getMonth() + 1}/${d.getDate()} (${WEEKDAY_LABELS[d.getDay()]})`
 }
 
-function getNextWeekMonday(): Date {
+function getThisWeekMonday(): Date {
   const today = new Date()
   const dayOfWeek = today.getDay() // 0(Sun) ~ 6(Sat)
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
@@ -93,36 +93,34 @@ function getNextWeekMonday(): Date {
   const thisMonday = new Date(today)
   thisMonday.setDate(today.getDate() + mondayOffset)
 
-  const nextMonday = new Date(thisMonday)
-  nextMonday.setDate(thisMonday.getDate() + 7)
-
-  return nextMonday
+  return thisMonday
 }
 
 /**
- * Returns the next week's Monday-Friday (5 weekdays) relative to today.
- * - If today is a weekday, still returns the *following* week's Mon-Fri.
- * - If today is a weekend, returns the coming Monday's week.
+ * Returns the current week's Monday-Friday (5 weekdays) relative to today,
+ * so "today" (and any earlier days in the same week) are visible by default
+ * — needed for the calendar's past-date graying to actually show up on load
+ * instead of only after navigating back a week.
  */
-export function getNextWeekdays(): WeekDay[] {
-  const nextMonday = getNextWeekMonday()
+export function getCurrentWeekdays(): WeekDay[] {
+  const monday = getThisWeekMonday()
 
   return Array.from({ length: 5 }, (_, i) => {
-    const d = new Date(nextMonday)
-    d.setDate(nextMonday.getDate() + i)
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
     return { date: toISODate(d), label: formatDayLabel(d) }
   })
 }
 
-/** Default date range (Mon-Fri of next week) used to seed the date-range picker. */
+/** Default date range (Mon-Fri of the current week) used to seed the date-range picker. */
 export function getDefaultDateRange(): { from: Date; to: Date } {
-  const nextMonday = getNextWeekMonday()
-  const nextFriday = new Date(nextMonday)
-  nextFriday.setDate(nextMonday.getDate() + 4)
-  return { from: nextMonday, to: nextFriday }
+  const monday = getThisWeekMonday()
+  const friday = new Date(monday)
+  friday.setDate(monday.getDate() + 4)
+  return { from: monday, to: friday }
 }
 
-/** Returns every date (inclusive) between `from` and `to`, labeled like `getNextWeekdays()`. */
+/** Returns every date (inclusive) between `from` and `to`, labeled like `getCurrentWeekdays()`. */
 export function getDateRangeDays(from: Date, to: Date): WeekDay[] {
   const days: WeekDay[] = []
   const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate())
@@ -136,7 +134,7 @@ export function getDateRangeDays(from: Date, to: Date): WeekDay[] {
   return days
 }
 
-const weekdays = getNextWeekdays()
+const weekdays = getCurrentWeekdays()
 
 export const bookings: Booking[] = [
   { id: "b1", roomId: "room-1", date: weekdays[0].date, startMinutes: 540, endMinutes: 600, title: "주간 스탠드업", purpose: "주간 진행 상황 공유", organizerId: "p3", attendeeIds: ["p3", "p4", "p1"] },

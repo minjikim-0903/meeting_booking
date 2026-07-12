@@ -1,8 +1,10 @@
 "use client"
 
 import { useMemo } from "react"
+import { Plus, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -22,14 +24,15 @@ export const ALL_TEAMS = "전체"
 const TEAMS = Object.keys(TEAM_COLOR) as Team[]
 
 export type ParticipantSelection = {
-  selectedTeam: string
+  selectedTeams: string[]
   search: string
   selectedParticipantIds: Set<string>
 }
 
 type ParticipantPickerProps = {
-  selectedTeam: string
-  onTeamChange: (team: string) => void
+  /** Empty array = 전체 (no team filter). Multiple teams can be selected at once, e.g. for a cross-team meeting. */
+  selectedTeams: string[]
+  onTeamsChange: (teams: string[]) => void
   search: string
   onSearchChange: (search: string) => void
   selectedParticipantIds: Set<string>
@@ -37,8 +40,8 @@ type ParticipantPickerProps = {
 }
 
 export function ParticipantPicker({
-  selectedTeam,
-  onTeamChange,
+  selectedTeams,
+  onTeamsChange,
   search,
   onSearchChange,
   selectedParticipantIds,
@@ -47,7 +50,7 @@ export function ParticipantPicker({
   const filteredPeople = useMemo(() => {
     const query = search.trim().toLowerCase()
     return people.filter((person) => {
-      if (selectedTeam !== ALL_TEAMS && person.team !== selectedTeam) {
+      if (selectedTeams.length > 0 && !selectedTeams.includes(person.team)) {
         return false
       }
       if (
@@ -59,7 +62,7 @@ export function ParticipantPicker({
       }
       return true
     })
-  }, [selectedTeam, search])
+  }, [selectedTeams, search])
 
   // "나 (현재 로그인 계정)" is a synthetic entry (id "me") for the current
   // (mock) user, not part of the mock `people` roster. It's never filtered
@@ -76,42 +79,108 @@ export function ParticipantPicker({
     return { name: MOCK_USER.name, email: MOCK_USER.email }
   }, [search])
 
+  function teamSelectValue(value: string) {
+    return value === ALL_TEAMS ? (
+      ALL_TEAMS
+    ) : (
+      <span className="flex items-center gap-1.5">
+        <span className={cn("size-2 rounded-full", TEAM_COLOR[value as Team].dot)} />
+        {value}
+      </span>
+    )
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-muted-foreground">팀 선택</span>
-        <Select
-          value={selectedTeam}
-          onValueChange={(value) => value && onTeamChange(value as string)}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue>
-              {(value: string) =>
-                value === ALL_TEAMS ? (
-                  ALL_TEAMS
-                ) : (
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      className={cn("size-2 rounded-full", TEAM_COLOR[value as Team].dot)}
-                    />
-                    {value}
-                  </span>
-                )
+
+        <div className="flex items-center gap-1.5">
+          <Select
+            value={selectedTeams[0] ?? ALL_TEAMS}
+            onValueChange={(value) => {
+              if (!value) return
+              if (value === ALL_TEAMS) {
+                onTeamsChange([])
+              } else {
+                onTeamsChange([value, ...selectedTeams.slice(1)])
               }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_TEAMS}>전체</SelectItem>
-            {TEAMS.map((team) => (
-              <SelectItem key={team} value={team}>
-                <span className="flex items-center gap-1.5">
-                  <span className={cn("size-2 rounded-full", TEAM_COLOR[team].dot)} />
-                  {team}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue>{teamSelectValue}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_TEAMS}>전체</SelectItem>
+              {TEAMS.map((team) => (
+                <SelectItem key={team} value={team}>
+                  <span className="flex items-center gap-1.5">
+                    <span className={cn("size-2 rounded-full", TEAM_COLOR[team].dot)} />
+                    {team}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {selectedTeams.length > 0 && selectedTeams.length < TEAMS.length && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              title="팀 추가"
+              onClick={() => {
+                const nextTeam = TEAMS.find((t) => !selectedTeams.includes(t))
+                if (nextTeam) onTeamsChange([...selectedTeams, nextTeam])
+              }}
+            >
+              <Plus />
+            </Button>
+          )}
+        </div>
+
+        {selectedTeams.slice(1).map((team, i) => {
+          const idx = i + 1
+          const otherSelected = selectedTeams.filter((_, j) => j !== idx)
+          return (
+            <div key={idx} className="flex items-center gap-1.5">
+              <Select
+                value={team}
+                onValueChange={(value) => {
+                  if (!value) return
+                  const next = [...selectedTeams]
+                  next[idx] = value
+                  onTeamsChange(next)
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue>{teamSelectValue}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {TEAMS.filter((t) => !otherSelected.includes(t)).map((t) => (
+                    <SelectItem key={t} value={t}>
+                      <span className="flex items-center gap-1.5">
+                        <span className={cn("size-2 rounded-full", TEAM_COLOR[t].dot)} />
+                        {t}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                title="팀 제거"
+                onClick={() =>
+                  onTeamsChange(selectedTeams.filter((_, j) => j !== idx))
+                }
+              >
+                <X />
+              </Button>
+            </div>
+          )
+        })}
       </div>
 
       <div className="flex flex-col gap-1.5">
