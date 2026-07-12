@@ -71,6 +71,13 @@ export const rooms: Room[] = [
 
 export type WeekDay = { date: string; label: string }
 
+/**
+ * "오늘"을 실제 기기 시각이 아니라 고정된 데모 날짜로 취급한다 — 데모/스크린샷을
+ * 언제 보든 동일하게 재현되도록 하기 위함. 지난 날짜 비활성화, 기본 주간 범위,
+ * "오늘" 뱃지 표시가 모두 이 값을 기준으로 한다.
+ */
+export const MOCK_TODAY = new Date(2026, 6, 14) // 2026-07-14
+
 function toISODate(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
@@ -86,7 +93,7 @@ export function formatDayLabel(d: Date): string {
 }
 
 function getThisWeekMonday(): Date {
-  const today = new Date()
+  const today = MOCK_TODAY
   const dayOfWeek = today.getDay() // 0(Sun) ~ 6(Sat)
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
 

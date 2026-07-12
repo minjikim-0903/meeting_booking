@@ -36,6 +36,7 @@ import {
   getDateRangeDays,
   getDefaultDateRange,
   getCurrentWeekdays,
+  MOCK_TODAY,
   rooms,
   type Booking,
   type Room,
@@ -250,7 +251,7 @@ export function RoomSchedule() {
   }, [dateRange])
 
   // 지난 날짜는 회의실 예약이 불가능하므로 비활성화 기준으로 쓴다.
-  const todayISO = useMemo(() => formatLocalISODate(new Date()), [])
+  const todayISO = useMemo(() => formatLocalISODate(MOCK_TODAY), [])
 
   // "전원 가능" highlighting is per time slot (not day-level): a free slot is
   // highlighted only when every selected participant is available at that
@@ -564,11 +565,16 @@ export function RoomSchedule() {
                         <div
                           key={day.date}
                           className={cn(
-                            "sticky top-0 z-20 flex h-8 items-center justify-center border-b bg-background text-xs font-medium",
+                            "sticky top-0 z-20 flex h-8 items-center justify-center gap-1 border-b bg-background text-xs font-medium",
                             day.date < todayISO && "text-muted-foreground/40"
                           )}
                         >
                           {day.label}
+                          {day.date === todayISO && (
+                            <Badge variant="default" className="text-[10px]">
+                              오늘
+                            </Badge>
+                          )}
                         </div>
                       ))}
 
@@ -797,53 +803,61 @@ export function RoomSchedule() {
                 </div>
               </div>
 
-              {!isOwnBooking(infoBooking) && (
-                <div className="flex flex-col gap-1.5 border-t pt-3">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    타 팀 예약이므로 직접 취소/변경할 수 없습니다. 조율이 필요하면
-                    예약자에게 요청을 보내세요.
-                  </span>
-                  {coordinationSubmitted ? (
-                    <p className="text-sm text-primary">
-                      조율 신청을 보냈습니다. (준비 중 — 실제 알림 발송은 추후
-                      제공됩니다)
-                    </p>
-                  ) : (
-                    <Textarea
-                      placeholder="예: 같은 시간대에 급한 임원 보고가 있어 양해 부탁드립니다."
-                      value={coordinationMessage}
-                      onChange={(e) => setCoordinationMessage(e.target.value)}
-                      rows={3}
-                    />
-                  )}
-                </div>
+              {infoBooking.date < todayISO ? (
+                <p className="border-t pt-3 text-xs text-muted-foreground">
+                  지난 일정이라 취소/변경/조율 신청을 할 수 없습니다.
+                </p>
+              ) : (
+                !isOwnBooking(infoBooking) && (
+                  <div className="flex flex-col gap-1.5 border-t pt-3">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      타 팀 예약이므로 직접 취소/변경할 수 없습니다. 조율이 필요하면
+                      예약자에게 요청을 보내세요.
+                    </span>
+                    {coordinationSubmitted ? (
+                      <p className="text-sm text-primary">
+                        조율 신청을 보냈습니다. (준비 중 — 실제 알림 발송은 추후
+                        제공됩니다)
+                      </p>
+                    ) : (
+                      <Textarea
+                        placeholder="예: 같은 시간대에 급한 임원 보고가 있어 양해 부탁드립니다."
+                        value={coordinationMessage}
+                        onChange={(e) => setCoordinationMessage(e.target.value)}
+                        rows={3}
+                      />
+                    )}
+                  </div>
+                )
               )}
             </div>
           )}
 
           <DialogFooter>
-            {infoBooking && isOwnBooking(infoBooking) ? (
-              <>
-                <Button
-                  variant="destructive"
-                  onClick={() => handleCancelBooking(infoBooking.id)}
-                >
-                  예약 취소
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleOpenReschedule(infoBooking)}
-                >
-                  일정 변경
-                </Button>
-              </>
-            ) : (
-              !coordinationSubmitted && (
-                <Button onClick={handleSubmitCoordinationRequest}>
-                  예약 조율 신청
-                </Button>
-              )
-            )}
+            {infoBooking &&
+              infoBooking.date >= todayISO &&
+              (isOwnBooking(infoBooking) ? (
+                <>
+                  <Button
+                    variant="destructive"
+                    onClick={() => handleCancelBooking(infoBooking.id)}
+                  >
+                    예약 취소
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleOpenReschedule(infoBooking)}
+                  >
+                    일정 변경
+                  </Button>
+                </>
+              ) : (
+                !coordinationSubmitted && (
+                  <Button onClick={handleSubmitCoordinationRequest}>
+                    예약 조율 신청
+                  </Button>
+                )
+              ))}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -905,31 +919,39 @@ export function RoomSchedule() {
                 </Button>
               )}
 
-              {infoRequest.organizerEmail !== MOCK_USER.email && (
-                <p className="text-xs text-muted-foreground">
-                  다른 사람이 예약한 요청이라 직접 취소할 수 없습니다.
+              {infoRequest.date < todayISO ? (
+                <p className="border-t pt-3 text-xs text-muted-foreground">
+                  지난 일정이라 취소/변경할 수 없습니다.
                 </p>
+              ) : (
+                infoRequest.organizerEmail !== MOCK_USER.email && (
+                  <p className="text-xs text-muted-foreground">
+                    다른 사람이 예약한 요청이라 직접 취소할 수 없습니다.
+                  </p>
+                )
               )}
             </div>
           )}
 
           <DialogFooter>
-            {infoRequest && infoRequest.organizerEmail === MOCK_USER.email && (
-              <>
-                <Button
-                  variant="destructive"
-                  onClick={() => handleCancelRequest(infoRequest.id)}
-                >
-                  {infoRequest.status === "pending" ? "요청 취소" : "예약 취소"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleEditRequest(infoRequest)}
-                >
-                  일정 변경
-                </Button>
-              </>
-            )}
+            {infoRequest &&
+              infoRequest.date >= todayISO &&
+              infoRequest.organizerEmail === MOCK_USER.email && (
+                <>
+                  <Button
+                    variant="destructive"
+                    onClick={() => handleCancelRequest(infoRequest.id)}
+                  >
+                    {infoRequest.status === "pending" ? "요청 취소" : "예약 취소"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleEditRequest(infoRequest)}
+                  >
+                    일정 변경
+                  </Button>
+                </>
+              )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
