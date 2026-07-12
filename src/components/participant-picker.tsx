@@ -14,11 +14,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { people, type Team } from "@/lib/mock-participants"
+import { cn } from "@/lib/utils"
+import { people, TEAM_COLOR, type Team } from "@/lib/mock-participants"
 
 export const ALL_TEAMS = "전체"
 
-const TEAMS: Team[] = ["프로덕트오너", "개발자", "데이터분석가", "디자이너"]
+const TEAMS = Object.keys(TEAM_COLOR) as Team[]
 
 export type ParticipantSelection = {
   selectedTeam: string
@@ -81,9 +82,7 @@ export function ParticipantPicker({
   }, [session, search])
 
   return (
-    <div className="flex h-full flex-col gap-3 rounded-md border p-4">
-      <h3 className="text-sm font-semibold">참석자 선택</h3>
-
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-muted-foreground">팀 선택</span>
         <Select
@@ -91,13 +90,29 @@ export function ParticipantPicker({
           onValueChange={(value) => value && onTeamChange(value as string)}
         >
           <SelectTrigger className="w-full">
-            <SelectValue />
+            <SelectValue>
+              {(value: string) =>
+                value === ALL_TEAMS ? (
+                  ALL_TEAMS
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      className={cn("size-2 rounded-full", TEAM_COLOR[value as Team].dot)}
+                    />
+                    {value}
+                  </span>
+                )
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={ALL_TEAMS}>전체</SelectItem>
             {TEAMS.map((team) => (
               <SelectItem key={team} value={team}>
-                {team}
+                <span className="flex items-center gap-1.5">
+                  <span className={cn("size-2 rounded-full", TEAM_COLOR[team].dot)} />
+                  {team}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -165,8 +180,12 @@ export function ParticipantPicker({
                   />
                   <span className="flex flex-1 flex-col gap-0.5 overflow-hidden">
                     <span className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={cn("size-2 shrink-0 rounded-full", TEAM_COLOR[person.team].dot)}
+                        title={person.team}
+                      />
                       <span className="text-sm font-medium">{person.name}</span>
-                      <Badge variant="outline">{person.team}</Badge>
+                      <Badge variant="outline">{person.role}</Badge>
                     </span>
                     <span className="truncate text-xs text-muted-foreground">
                       {person.email}

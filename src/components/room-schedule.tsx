@@ -42,8 +42,10 @@ import {
 import {
   getAvailability,
   people,
+  TEAM_COLOR,
   type AvailabilityStatus,
   type Person,
+  type Role,
   type Team,
 } from "@/lib/mock-participants"
 
@@ -118,8 +120,8 @@ type SlotSelection = {
   endMinutes: number
 }
 
-/** A selectable invitee: either a mock `Person` or the synthetic "me" (logged-in session user), which has no `Team`. */
-type Invitee = Omit<Person, "team"> & { team?: Team }
+/** A selectable invitee: either a mock `Person` or the synthetic "me" (logged-in session user), which has no `Team`/`Role`. */
+type Invitee = Omit<Person, "team" | "role"> & { team?: Team; role?: Role }
 
 export function RoomSchedule() {
   const { data: session } = useSession()
@@ -198,21 +200,17 @@ export function RoomSchedule() {
     return getNextWeekdays()
   }, [dateRange])
 
-  // Mock availability is day-level (not per-10-minute-slot), so "전원 가능"
-  // highlighting applies to every free slot within a day where every
-  // selected participant's status for that day is "available".
-  const allAvailableDates = useMemo(() => {
-    if (selectedPeople.length === 0) return new Set<string>()
-    return new Set(
-      weekdays
-        .filter((day) =>
-          selectedPeople.every(
-            (person) => getAvailability(person.id, day.date) === "available"
-          )
-        )
-        .map((day) => day.date)
+  // "전원 가능" highlighting is per time slot (not day-level): a free slot is
+  // highlighted only when every selected participant is available at that
+  // exact date + time.
+  function isAllAvailable(date: string, minute: number): boolean {
+    return (
+      selectedPeople.length > 0 &&
+      selectedPeople.every(
+        (person) => getAvailability(person.id, date, minute) === "available"
+      )
     )
-  }, [selectedPeople, weekdays])
+  }
 
   const reschedulingDuration = reschedulingBooking
     ? reschedulingBooking.endMinutes - reschedulingBooking.startMinutes
@@ -344,61 +342,69 @@ export function RoomSchedule() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="grid w-full min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-10">
-        <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden rounded-md border p-4 lg:col-span-3">
+        <div className="flex h-full min-h-0 flex-col gap-4 lg:col-span-3">
           <h2 className="text-lg font-semibold tracking-tight">회의실 예약</h2>
 
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">회의실 선택</span>
-            <Select
-              value={room?.id}
-              onValueChange={(value) => value && setSelectedRoomId(value)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="회의실 선택">
-                  {(value: string) => {
-                    const r = rooms.find((room) => room.id === value)
-                    return r ? `${r.name} · ${r.capacity}인` : "회의실 선택"
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {rooms.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.name} · {r.capacity}인
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">회의실 선택</span>
+              <Select
+                value={room?.id}
+                onValueChange={(value) => value && setSelectedRoomId(value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="회의실 선택">
+                    {(value: string) => {
+                      const r = rooms.find((room) => room.id === value)
+                      return r ? `${r.name} · ${r.capacity}인` : "회의실 선택"
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {rooms.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      <div className="flex w-full items-center justify-between gap-3">
+                        <span>
+                          {r.name} · {r.capacity}인
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Badge variant={r.hasMonitor ? "default" : "secondary"}>
+                            모니터 {r.hasMonitor ? "있음" : "없음"}
+                          </Badge>
+                          <Badge variant={r.hasVideoEquipment ? "default" : "secondary"}>
+                            화상 {r.hasVideoEquipment ? "가능" : "불가"}
+                          </Badge>
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-3 border-t pt-3">
-            <span className="text-xs font-medium text-muted-foreground">참석자 선택</span>
-            <ParticipantPicker
-              selectedTeam={selectedTeam}
-              onTeamChange={handleTeamChange}
-              search={participantSearch}
-              onSearchChange={setParticipantSearch}
-              selectedParticipantIds={selectedParticipantIds}
-              onToggleParticipant={toggleParticipant}
-            />
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <ParticipantPicker
+                selectedTeam={selectedTeam}
+                onTeamChange={handleTeamChange}
+                search={participantSearch}
+                onSearchChange={setParticipantSearch}
+                selectedParticipantIds={selectedParticipantIds}
+                onToggleParticipant={toggleParticipant}
+              />
+            </div>
           </div>
         </div>
 
         <div className="flex min-h-0 flex-col lg:col-span-7">
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
             {room ? (
               <>
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <h2 className="text-lg font-semibold tracking-tight">스케줄 달력</h2>
                   <div className="flex flex-wrap items-center gap-4 text-sm">
-                    <span className="font-medium">색상 예시</span>
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <span className="size-3 rounded-sm border border-border bg-background" />
                       예약 가능
-                    </span>
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <span className="size-3 rounded-sm bg-destructive/20" />
-                      예약됨
                     </span>
                     <span className="flex items-center gap-1.5 text-muted-foreground">
                       <span className="size-3 rounded-sm bg-emerald-500/25" />
@@ -407,21 +413,12 @@ export function RoomSchedule() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={room.hasVideoEquipment ? "default" : "secondary"}>
-                    화상장비 {room.hasVideoEquipment ? "있음" : "없음"}
-                  </Badge>
-                  <Badge variant={room.hasMonitor ? "default" : "secondary"}>
-                    모니터 {room.hasMonitor ? "있음" : "없음"}
-                  </Badge>
-                </div>
-
-                <div className="rounded-md border">
+                <div className="flex min-h-0 flex-1 flex-col rounded-md border">
                   <div className="flex items-center justify-center border-b p-1.5">
                     <DateRangeNav dateRange={dateRange} onDateRangeChange={setDateRange} />
                   </div>
 
-                  <ScrollArea className="h-[560px] w-full">
+                  <ScrollArea className="min-h-0 w-full flex-1">
                     <div
                       className="grid w-max min-w-full"
                       style={{
@@ -464,6 +461,10 @@ export function RoomSchedule() {
 
                             if (booking) {
                               const organizer = getOrganizer(booking)
+                              const teamColor = organizer
+                                ? TEAM_COLOR[organizer.team].block
+                                : "bg-destructive/15 hover:bg-destructive/25"
+                              const isFirstSlot = minute === booking.startMinutes
                               return (
                                 <Tooltip key={`${day.date}-${minute}`}>
                                   <TooltipTrigger
@@ -471,13 +472,24 @@ export function RoomSchedule() {
                                       <button
                                         type="button"
                                         onClick={() => handleBookedSlotClick(booking)}
-                                        className="h-5 border-r border-b border-border/60 bg-destructive/15 transition-colors hover:bg-destructive/25"
-                                      />
+                                        className={cn(
+                                          "relative h-5 border-r border-b border-border/60 transition-colors",
+                                          teamColor
+                                        )}
+                                      >
+                                        {isFirstSlot && (
+                                          <span className="absolute inset-x-0 top-0 z-10 truncate px-1 text-left text-[9px] leading-[14px] font-medium text-foreground/80">
+                                            {organizer?.team} {minutesToLabel(booking.startMinutes)}
+                                            {"~"}
+                                            {minutesToLabel(booking.endMinutes)}
+                                          </span>
+                                        )}
+                                      </button>
                                     }
                                   />
                                   <TooltipContent>
-                                    {booking.title} · {organizer?.team} · {organizer?.name}{" "}
-                                    ·{" "}
+                                    {booking.title} · {organizer?.team} · {organizer?.role}{" "}
+                                    {organizer?.name} ·{" "}
                                     {minutesToLabel(booking.startMinutes)}
                                     {"~"}
                                     {minutesToLabel(booking.endMinutes)}
@@ -486,7 +498,7 @@ export function RoomSchedule() {
                               )
                             }
 
-                            const allAvailable = allAvailableDates.has(day.date)
+                            const allAvailable = isAllAvailable(day.date, minute)
                             return (
                               <button
                                 key={`${day.date}-${minute}`}
@@ -570,7 +582,7 @@ export function RoomSchedule() {
                           {person.email}
                         </span>
                       </span>
-                      <Badge variant="outline">{person.team}</Badge>
+                      <Badge variant="outline">{person.role}</Badge>
                     </div>
                   ))}
                 </div>
@@ -737,7 +749,11 @@ export function RoomSchedule() {
                 ) : (
                   <div className="flex flex-col gap-1 rounded-md border p-1.5">
                     {selectedPeople.map((person) => {
-                      const status = getAvailability(person.id, selection.date)
+                      const status = getAvailability(
+                        person.id,
+                        selection.date,
+                        selection.startMinutes
+                      )
                       return (
                         <div
                           key={person.id}
@@ -746,8 +762,8 @@ export function RoomSchedule() {
                           <span className="flex flex-1 flex-col">
                             <span className="flex items-center gap-1.5 text-sm font-medium">
                               {person.name}
-                              {person.team && (
-                                <Badge variant="outline">{person.team}</Badge>
+                              {person.role && (
+                                <Badge variant="outline">{person.role}</Badge>
                               )}
                             </span>
                             <span className="text-xs text-muted-foreground">
