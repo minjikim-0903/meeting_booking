@@ -42,31 +42,6 @@
 - `BookingRequest` — 회의실·일시·목적·주최자 정보를 담은 예약 요청 (`pending` / `confirmed` / `rejected`)
 - `BookingInvitee` — 요청별 초대 대상자와 응답 상태(`pending` / `accepted` / `rejected`, 거절 사유 포함)
 
-## 시작하기
-
-### 1. 환경 변수 설정
-
-`.env.local`을 참고해 다음 값을 채웁니다.
-
-- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` — [Google Cloud Console](https://console.cloud.google.com/apis/credentials)에서 발급 (리다이렉트 URI: `http://localhost:3000/api/auth/callback/google`)
-- `AUTH_SECRET` — `npx auth secret` 또는 `openssl rand -base64 33`
-- `DATABASE_URL` / `DIRECT_URL` — Supabase Postgres 연결 문자열 (풀링/다이렉트 각각)
-
-### 2. 의존성 설치 및 DB 마이그레이션
-
-```bash
-npm install
-npx prisma migrate dev
-```
-
-### 3. 개발 서버 실행
-
-```bash
-npm run dev
-```
-
-[http://localhost:3000](http://localhost:3000)에서 확인합니다.
-
 ## 현재 구현 범위 (MVP)
 
 `docs/plan.md`의 로드맵 기준으로:
