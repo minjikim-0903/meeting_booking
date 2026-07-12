@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
 import { useSession } from "next-auth/react"
 
 import { Badge } from "@/components/ui/badge"
@@ -154,147 +153,135 @@ export default function RequestsPage() {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-black">
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-8 py-6">
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium text-muted-foreground">
-              미팅 예약 시스템
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-lg font-semibold tracking-tight">받은 요청</h1>
+        <Button
+          variant="outline"
+          onClick={handleRefresh}
+          disabled={loading || status !== "authenticated"}
+        >
+          새로고침
+        </Button>
+      </header>
+
+      {status === "loading" && (
+        <p className="text-sm text-muted-foreground">불러오는 중...</p>
+      )}
+
+      {status === "unauthenticated" && (
+        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+          로그인이 필요합니다.
+        </p>
+      )}
+
+      {status === "authenticated" && (
+        <>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          {!loading && invites.length === 0 && !error && (
+            <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+              받은 요청이 없습니다.
             </p>
-            <h1 className="text-2xl font-semibold tracking-tight">받은 요청</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="outline">← 회의실 선택</Button>
-            </Link>
-            <Button
-              variant="outline"
-              onClick={handleRefresh}
-              disabled={loading || status !== "authenticated"}
-            >
-              새로고침
-            </Button>
-          </div>
-        </header>
+          )}
 
-        {status === "loading" && (
-          <p className="text-sm text-muted-foreground">불러오는 중...</p>
-        )}
+          <div className="flex flex-col gap-3">
+            {invites.map((invite) => {
+              const { request } = invite
+              const isBusy = respondingId === invite.id
+              const isRejecting = rejectingId === invite.id
 
-        {status === "unauthenticated" && (
-          <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-            로그인이 필요합니다.
-          </p>
-        )}
-
-        {status === "authenticated" && (
-          <>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-
-            {!loading && invites.length === 0 && !error && (
-              <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-                받은 요청이 없습니다.
-              </p>
-            )}
-
-            <div className="flex flex-col gap-3">
-              {invites.map((invite) => {
-                const { request } = invite
-                const isBusy = respondingId === invite.id
-                const isRejecting = rejectingId === invite.id
-
-                return (
-                  <div
-                    key={invite.id}
-                    className="flex flex-col gap-2 rounded-md border p-4"
-                  >
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-sm font-semibold">
-                        {request.title}
-                      </span>
-                      <Badge variant="outline">{request.roomName}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDayLabel(parseLocalDate(request.date))} ·{" "}
-                      {minutesToLabel(request.startMinutes)}
-                      {"~"}
-                      {minutesToLabel(request.endMinutes)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      목적: {request.purpose}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      예약자: {request.organizerName} ({request.organizerEmail})
-                    </p>
-
-                    {isRejecting ? (
-                      <div className="flex flex-wrap items-center gap-2 border-t pt-2">
-                        <Select
-                          value={rejectReason || undefined}
-                          onValueChange={(value) =>
-                            value && setRejectReason(value as string)
-                          }
-                        >
-                          <SelectTrigger className="w-48">
-                            <SelectValue placeholder="거절 사유 선택" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {REJECT_REASONS.map((reason) => (
-                              <SelectItem key={reason} value={reason}>
-                                {reason}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          variant="destructive"
-                          disabled={!rejectReason || isBusy}
-                          onClick={() =>
-                            respond(invite.id, {
-                              status: "rejected",
-                              rejectReason,
-                            })
-                          }
-                        >
-                          거절 확정
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setRejectingId(null)
-                            setRejectReason("")
-                          }}
-                        >
-                          취소
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 border-t pt-2">
-                        <Button
-                          disabled={isBusy}
-                          onClick={() => respond(invite.id, { status: "accepted" })}
-                        >
-                          수락
-                        </Button>
-                        <Button
-                          variant="outline"
-                          disabled={isBusy}
-                          onClick={() => {
-                            setRejectingId(invite.id)
-                            setRejectReason("")
-                          }}
-                        >
-                          거절
-                        </Button>
-                      </div>
-                    )}
+              return (
+                <div
+                  key={invite.id}
+                  className="flex flex-col gap-2 rounded-md border p-4"
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-sm font-semibold">
+                      {request.title}
+                    </span>
+                    <Badge variant="outline">{request.roomName}</Badge>
                   </div>
-                )
-              })}
-            </div>
-          </>
-        )}
-      </main>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDayLabel(parseLocalDate(request.date))} ·{" "}
+                    {minutesToLabel(request.startMinutes)}
+                    {"~"}
+                    {minutesToLabel(request.endMinutes)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    목적: {request.purpose}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    예약자: {request.organizerName} ({request.organizerEmail})
+                  </p>
+
+                  {isRejecting ? (
+                    <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+                      <Select
+                        value={rejectReason || undefined}
+                        onValueChange={(value) =>
+                          value && setRejectReason(value as string)
+                        }
+                      >
+                        <SelectTrigger className="w-48">
+                          <SelectValue placeholder="거절 사유 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REJECT_REASONS.map((reason) => (
+                            <SelectItem key={reason} value={reason}>
+                              {reason}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="destructive"
+                        disabled={!rejectReason || isBusy}
+                        onClick={() =>
+                          respond(invite.id, {
+                            status: "rejected",
+                            rejectReason,
+                          })
+                        }
+                      >
+                        거절 확정
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setRejectingId(null)
+                          setRejectReason("")
+                        }}
+                      >
+                        취소
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 border-t pt-2">
+                      <Button
+                        disabled={isBusy}
+                        onClick={() => respond(invite.id, { status: "accepted" })}
+                      >
+                        수락
+                      </Button>
+                      <Button
+                        variant="outline"
+                        disabled={isBusy}
+                        onClick={() => {
+                          setRejectingId(invite.id)
+                          setRejectReason("")
+                        }}
+                      >
+                        거절
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
     </div>
   )
 }

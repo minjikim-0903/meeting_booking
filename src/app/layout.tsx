@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import "./globals.css";
+import { SidebarNav } from "@/components/sidebar-nav";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const geistSans = Geist({
@@ -31,7 +32,14 @@ export default function RootLayout({
     >
       <body className="h-screen flex flex-col overflow-hidden">
         <SessionProvider>
-          <TooltipProvider>{children}</TooltipProvider>
+          <TooltipProvider>
+            <div className="flex h-full min-h-0 flex-1 overflow-hidden bg-white">
+              <SidebarNav />
+              <main className="flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto px-8 py-6">
+                {children}
+              </main>
+            </div>
+          </TooltipProvider>
         </SessionProvider>
       </body>
     </html>
