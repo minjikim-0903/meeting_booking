@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { Video } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -116,6 +117,20 @@ export default function RequestsPage() {
                 <p className="text-sm text-muted-foreground">
                   예약자: {request.organizerName} ({request.organizerEmail})
                 </p>
+                {request.videoLink && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-fit"
+                    nativeButton={false}
+                    render={
+                      <a href={request.videoLink} target="_blank" rel="noreferrer" />
+                    }
+                  >
+                    <Video className="size-4" />
+                    화상으로 참석
+                  </Button>
+                )}
 
                 {isRejecting ? (
                   <div className="flex flex-wrap items-center gap-2 border-t pt-2">
@@ -249,6 +264,24 @@ export default function RequestsPage() {
                   <p className="text-sm text-muted-foreground">
                     예약자: {request.organizerName} ({request.organizerEmail})
                   </p>
+                  {request.videoLink && invite.status === "accepted" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-fit"
+                      nativeButton={false}
+                      render={
+                        <a
+                          href={request.videoLink}
+                          target="_blank"
+                          rel="noreferrer"
+                        />
+                      }
+                    >
+                      <Video className="size-4" />
+                      화상으로 참석
+                    </Button>
+                  )}
                   {invite.status === "rejected" && invite.rejectReason && (
                     <p className="text-sm text-muted-foreground">
                       거절 사유: {invite.rejectReason}

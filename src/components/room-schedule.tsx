@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { Video } from "lucide-react"
 import type { DateRange } from "react-day-picker"
 
 import { Badge } from "@/components/ui/badge"
@@ -195,6 +196,7 @@ export function RoomSchedule() {
   const [requestSubmitting, setRequestSubmitting] = useState(false)
   const [requestError, setRequestError] = useState<string | null>(null)
   const [meetingPurpose, setMeetingPurpose] = useState("")
+  const [meetingVideoLink, setMeetingVideoLink] = useState("")
 
   function toggleParticipant(personId: string, checked: boolean) {
     setSelectedParticipantIds((prev) => {
@@ -349,6 +351,7 @@ export function RoomSchedule() {
     setSelectedRoomId(editRoom.id)
     setSelectedParticipantIds(ids)
     setMeetingPurpose(request.purpose)
+    setMeetingVideoLink(request.videoLink ?? "")
     setRequestSubmitting(false)
     setRequestError(null)
     setInfoRequest(null)
@@ -415,6 +418,7 @@ export function RoomSchedule() {
     setRequestSubmitting(false)
     setRequestError(null)
     setMeetingPurpose("")
+    setMeetingVideoLink("")
     setSelection({
       room,
       date,
@@ -445,6 +449,7 @@ export function RoomSchedule() {
         endMinutes: selection.endMinutes,
         title: `${selection.room.name} 예약 요청`,
         purpose,
+        videoLink: meetingVideoLink,
         organizerEmail: MOCK_USER.email,
         organizerName: MOCK_USER.name,
         invitees: selectedPeople.map((person) => ({
@@ -873,6 +878,25 @@ export function RoomSchedule() {
                 {minutesToLabel(infoRequest.endMinutes)}
               </p>
 
+              {infoRequest.videoLink && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-fit"
+                  nativeButton={false}
+                  render={
+                    <a
+                      href={infoRequest.videoLink}
+                      target="_blank"
+                      rel="noreferrer"
+                    />
+                  }
+                >
+                  <Video className="size-4" />
+                  화상으로 참석
+                </Button>
+              )}
+
               {infoRequest.organizerEmail !== MOCK_USER.email && (
                 <p className="text-xs text-muted-foreground">
                   다른 사람이 예약한 요청이라 직접 취소할 수 없습니다.
@@ -1017,6 +1041,18 @@ export function RoomSchedule() {
                     placeholder="예: 주간 스프린트 회고 (필수)"
                     value={meetingPurpose}
                     onChange={(e) => setMeetingPurpose(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    화상 회의 링크 (선택)
+                  </span>
+                  <Input
+                    type="url"
+                    placeholder="예: https://meet.google.com/xxx-xxxx-xxx"
+                    value={meetingVideoLink}
+                    onChange={(e) => setMeetingVideoLink(e.target.value)}
                   />
                 </div>
 

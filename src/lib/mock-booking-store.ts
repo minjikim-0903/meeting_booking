@@ -18,6 +18,7 @@ export type MockBookingRequest = {
   endMinutes: number
   title: string
   purpose: string
+  videoLink: string | null
   organizerEmail: string
   organizerName: string
   status: MockRequestStatus
@@ -77,6 +78,7 @@ export function createBookingRequest(input: {
   endMinutes: number
   title: string
   purpose: string
+  videoLink?: string | null
   organizerEmail: string
   organizerName: string
   invitees: { email: string; name: string }[]
@@ -91,6 +93,7 @@ export function createBookingRequest(input: {
     endMinutes: input.endMinutes,
     title: input.title,
     purpose: input.purpose,
+    videoLink: input.videoLink?.trim() || null,
     organizerEmail: input.organizerEmail,
     organizerName: input.organizerName,
     status: "pending",
