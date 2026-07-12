@@ -59,70 +59,67 @@ export function DateRangeNav({ dateRange, onDateRangeChange }: DateRangeNavProps
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-muted-foreground">날짜 범위</span>
-      <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          title="1주일 전"
-          aria-label="1주일 전"
-          onClick={() => onDateRangeChange(shiftRange(dateRange, -7))}
-        >
-          <ChevronsLeft />
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          title="1일 전"
-          aria-label="1일 전"
-          onClick={() => onDateRangeChange(shiftRange(dateRange, -1))}
-        >
-          <ChevronLeft />
-        </Button>
+    <div className="flex items-center gap-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        title="1주일 전"
+        aria-label="1주일 전"
+        onClick={() => onDateRangeChange(shiftRange(dateRange, -7))}
+      >
+        <ChevronsLeft />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        title="1일 전"
+        aria-label="1일 전"
+        onClick={() => onDateRangeChange(shiftRange(dateRange, -1))}
+      >
+        <ChevronLeft />
+      </Button>
 
-        <Popover onOpenChange={handlePopoverOpenChange}>
-          <PopoverTrigger
-            render={
-              <Button type="button" variant="outline" className="justify-start">
-                <CalendarIcon />
-                {formatRangeLabel(dateRange)}
-              </Button>
-            }
+      <Popover onOpenChange={handlePopoverOpenChange}>
+        <PopoverTrigger
+          render={
+            <Button type="button" variant="ghost" className="justify-start">
+              <CalendarIcon />
+              {formatRangeLabel(dateRange)}
+            </Button>
+          }
+        />
+        <PopoverContent className="w-auto p-0">
+          <Calendar
+            mode="range"
+            selected={draftRange}
+            onSelect={handleCalendarSelect}
+            defaultMonth={dateRange?.from}
           />
-          <PopoverContent className="w-auto p-0">
-            <Calendar
-              mode="range"
-              selected={draftRange}
-              onSelect={handleCalendarSelect}
-              defaultMonth={dateRange?.from}
-            />
-          </PopoverContent>
-        </Popover>
+        </PopoverContent>
+      </Popover>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          title="1일 후"
-          aria-label="1일 후"
-          onClick={() => onDateRangeChange(shiftRange(dateRange, 1))}
-        >
-          <ChevronRight />
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          title="1주일 후"
-          aria-label="1주일 후"
-          onClick={() => onDateRangeChange(shiftRange(dateRange, 7))}
-        >
-          <ChevronsRight />
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        title="1일 후"
+        aria-label="1일 후"
+        onClick={() => onDateRangeChange(shiftRange(dateRange, 1))}
+      >
+        <ChevronRight />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        title="1주일 후"
+        aria-label="1주일 후"
+        onClick={() => onDateRangeChange(shiftRange(dateRange, 7))}
+      >
+        <ChevronsRight />
+      </Button>
     </div>
   )
 }

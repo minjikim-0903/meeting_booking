@@ -81,7 +81,7 @@ export function ParticipantPicker({
   }, [session, search])
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border p-4">
+    <div className="flex h-full flex-col gap-3 rounded-md border p-4">
       <h3 className="text-sm font-semibold">참석자 선택</h3>
 
       <div className="flex flex-col gap-1.5">
@@ -114,7 +114,7 @@ export function ParticipantPicker({
         />
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-muted-foreground">
             참석자 체크리스트
@@ -124,7 +124,7 @@ export function ParticipantPicker({
           </span>
         </div>
 
-        <ScrollArea className="max-h-80 rounded-md border">
+        <ScrollArea className="h-full min-h-40 rounded-md border">
           {filteredPeople.length === 0 && !meEntry ? (
             <p className="p-4 text-sm text-muted-foreground">
               조건에 맞는 참석자가 없습니다.

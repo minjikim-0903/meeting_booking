@@ -121,12 +121,9 @@ type SlotSelection = {
 /** A selectable invitee: either a mock `Person` or the synthetic "me" (logged-in session user), which has no `Team`. */
 type Invitee = Omit<Person, "team"> & { team?: Team }
 
-type RoomScheduleProps = {
-  room: Room
-}
-
-export function RoomSchedule({ room }: RoomScheduleProps) {
+export function RoomSchedule() {
   const { data: session } = useSession()
+  const [selectedRoomId, setSelectedRoomId] = useState(rooms[0]?.id)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() =>
     getDefaultDateRange()
   )
@@ -192,12 +189,30 @@ export function RoomSchedule({ room }: RoomScheduleProps) {
     }
   }
 
+  const room = rooms.find((r) => r.id === selectedRoomId) ?? rooms[0]
+
   const weekdays = useMemo(() => {
     if (dateRange?.from && dateRange?.to) {
       return getDateRangeDays(dateRange.from, dateRange.to)
     }
     return getNextWeekdays()
   }, [dateRange])
+
+  // Mock availability is day-level (not per-10-minute-slot), so "전원 가능"
+  // highlighting applies to every free slot within a day where every
+  // selected participant's status for that day is "available".
+  const allAvailableDates = useMemo(() => {
+    if (selectedPeople.length === 0) return new Set<string>()
+    return new Set(
+      weekdays
+        .filter((day) =>
+          selectedPeople.every(
+            (person) => getAvailability(person.id, day.date) === "available"
+          )
+        )
+        .map((day) => day.date)
+    )
+  }, [selectedPeople, weekdays])
 
   const reschedulingDuration = reschedulingBooking
     ? reschedulingBooking.endMinutes - reschedulingBooking.startMinutes
@@ -327,132 +342,182 @@ export function RoomSchedule({ room }: RoomScheduleProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-4 text-sm">
-        <span className="font-medium">색상 예시</span>
-        <span className="flex items-center gap-1.5 text-muted-foreground">
-          <span className="size-3 rounded-sm border border-border bg-background" />
-          예약 가능
-        </span>
-        <span className="flex items-center gap-1.5 text-muted-foreground">
-          <span className="size-3 rounded-sm bg-destructive/20" />
-          예약됨
-        </span>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="grid w-full min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-10">
+        <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden rounded-md border p-4 lg:col-span-3">
+          <h2 className="text-lg font-semibold tracking-tight">회의실 예약</h2>
 
-      <div className="grid w-full grid-cols-1 gap-4 lg:grid-cols-10">
-        <div className="lg:col-span-3">
-          <ParticipantPicker
-            selectedTeam={selectedTeam}
-            onTeamChange={handleTeamChange}
-            search={participantSearch}
-            onSearchChange={setParticipantSearch}
-            selectedParticipantIds={selectedParticipantIds}
-            onToggleParticipant={toggleParticipant}
-          />
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">회의실 선택</span>
+            <Select
+              value={room?.id}
+              onValueChange={(value) => value && setSelectedRoomId(value)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="회의실 선택">
+                  {(value: string) => {
+                    const r = rooms.find((room) => room.id === value)
+                    return r ? `${r.name} · ${r.capacity}인` : "회의실 선택"
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {rooms.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name} · {r.capacity}인
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-3 border-t pt-3">
+            <span className="text-xs font-medium text-muted-foreground">참석자 선택</span>
+            <ParticipantPicker
+              selectedTeam={selectedTeam}
+              onTeamChange={handleTeamChange}
+              search={participantSearch}
+              onSearchChange={setParticipantSearch}
+              selectedParticipantIds={selectedParticipantIds}
+              onToggleParticipant={toggleParticipant}
+            />
+          </div>
         </div>
 
-        <div className="lg:col-span-7">
-          <div className="flex flex-col gap-3">
-            <DateRangeNav dateRange={dateRange} onDateRangeChange={setDateRange} />
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">수용인원 {room.capacity}인</Badge>
-              <Badge variant="outline">위치 {room.location}</Badge>
-              <Badge variant={room.hasVideoEquipment ? "default" : "secondary"}>
-                화상장비 {room.hasVideoEquipment ? "있음" : "없음"}
-              </Badge>
-              <Badge variant={room.hasMonitor ? "default" : "secondary"}>
-                모니터 {room.hasMonitor ? "있음" : "없음"}
-              </Badge>
-            </div>
-
-            <ScrollArea className="h-[560px] w-full rounded-md border">
-              <div
-                className="grid w-max min-w-full"
-                style={{
-                  gridTemplateColumns: `4.5rem repeat(${weekdays.length}, minmax(7rem, 1fr))`,
-                }}
-              >
-                {/* header row */}
-                <div className="sticky top-0 left-0 z-30 flex h-8 items-center justify-center border-r border-b bg-background text-xs font-medium text-muted-foreground">
-                  시간
-                </div>
-                {weekdays.map((day) => (
-                  <div
-                    key={day.date}
-                    className="sticky top-0 z-20 flex h-8 items-center justify-center border-b bg-background text-xs font-medium"
-                  >
-                    {day.label}
+        <div className="flex min-h-0 flex-col lg:col-span-7">
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            {room ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <h2 className="text-lg font-semibold tracking-tight">스케줄 달력</h2>
+                  <div className="flex flex-wrap items-center gap-4 text-sm">
+                    <span className="font-medium">색상 예시</span>
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <span className="size-3 rounded-sm border border-border bg-background" />
+                      예약 가능
+                    </span>
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <span className="size-3 rounded-sm bg-destructive/20" />
+                      예약됨
+                    </span>
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <span className="size-3 rounded-sm bg-emerald-500/25" />
+                      참석자 전원 가능
+                    </span>
                   </div>
-                ))}
+                </div>
 
-                {/* time rows */}
-                {TIME_SLOTS.map((minute) => {
-                  const showLabel = minute % 30 === 0
-                  return (
-                    <div key={`row-${minute}`} className="contents">
-                      <div
-                        className={cn(
-                          "sticky left-0 z-10 flex h-5 items-center justify-end border-r bg-background pr-2 text-[10px]",
-                          showLabel ? "text-muted-foreground" : "text-transparent"
-                        )}
-                      >
-                        {minutesToLabel(minute)}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={room.hasVideoEquipment ? "default" : "secondary"}>
+                    화상장비 {room.hasVideoEquipment ? "있음" : "없음"}
+                  </Badge>
+                  <Badge variant={room.hasMonitor ? "default" : "secondary"}>
+                    모니터 {room.hasMonitor ? "있음" : "없음"}
+                  </Badge>
+                </div>
+
+                <div className="rounded-md border">
+                  <div className="flex items-center justify-center border-b p-1.5">
+                    <DateRangeNav dateRange={dateRange} onDateRangeChange={setDateRange} />
+                  </div>
+
+                  <ScrollArea className="h-[560px] w-full">
+                    <div
+                      className="grid w-max min-w-full"
+                      style={{
+                        gridTemplateColumns: `4.5rem repeat(${weekdays.length}, minmax(7rem, 1fr))`,
+                      }}
+                    >
+                      {/* header row */}
+                      <div className="sticky top-0 left-0 z-30 flex h-8 items-center justify-center border-r border-b bg-background text-xs font-medium text-muted-foreground">
+                        시간
                       </div>
-                      {weekdays.map((day) => {
-                        const booking = findBooking(
-                          bookingList,
-                          room.id,
-                          day.date,
-                          minute
-                        )
+                      {weekdays.map((day) => (
+                        <div
+                          key={day.date}
+                          className="sticky top-0 z-20 flex h-8 items-center justify-center border-b bg-background text-xs font-medium"
+                        >
+                          {day.label}
+                        </div>
+                      ))}
 
-                        if (booking) {
-                          const organizer = getOrganizer(booking)
-                          return (
-                            <Tooltip key={`${day.date}-${minute}`}>
-                              <TooltipTrigger
-                                render={
-                                  <button
-                                    type="button"
-                                    onClick={() => handleBookedSlotClick(booking)}
-                                    className="h-5 border-r border-b border-border/60 bg-destructive/15 transition-colors hover:bg-destructive/25"
+                    {/* time rows */}
+                    {TIME_SLOTS.map((minute) => {
+                      const showLabel = minute % 30 === 0
+                      return (
+                        <div key={`row-${minute}`} className="contents">
+                          <div
+                            className={cn(
+                              "sticky left-0 z-10 flex h-5 items-center justify-end border-r bg-background pr-2 text-[10px]",
+                              showLabel ? "text-muted-foreground" : "text-transparent"
+                            )}
+                          >
+                            {minutesToLabel(minute)}
+                          </div>
+                          {weekdays.map((day) => {
+                            const booking = findBooking(
+                              bookingList,
+                              room.id,
+                              day.date,
+                              minute
+                            )
+
+                            if (booking) {
+                              const organizer = getOrganizer(booking)
+                              return (
+                                <Tooltip key={`${day.date}-${minute}`}>
+                                  <TooltipTrigger
+                                    render={
+                                      <button
+                                        type="button"
+                                        onClick={() => handleBookedSlotClick(booking)}
+                                        className="h-5 border-r border-b border-border/60 bg-destructive/15 transition-colors hover:bg-destructive/25"
+                                      />
+                                    }
                                   />
-                                }
-                              />
-                              <TooltipContent>
-                                {booking.title} · {organizer?.team} · {organizer?.name}{" "}
-                                ·{" "}
-                                {minutesToLabel(booking.startMinutes)}
-                                {"~"}
-                                {minutesToLabel(booking.endMinutes)}
-                              </TooltipContent>
-                            </Tooltip>
-                          )
-                        }
-
-                        return (
-                          <button
-                            key={`${day.date}-${minute}`}
-                            type="button"
-                            onClick={() =>
-                              handleFreeSlotClick(
-                                room,
-                                day.label,
-                                day.date,
-                                minute
+                                  <TooltipContent>
+                                    {booking.title} · {organizer?.team} · {organizer?.name}{" "}
+                                    ·{" "}
+                                    {minutesToLabel(booking.startMinutes)}
+                                    {"~"}
+                                    {minutesToLabel(booking.endMinutes)}
+                                  </TooltipContent>
+                                </Tooltip>
                               )
                             }
-                            className="h-5 border-r border-b border-border/60 bg-background transition-colors hover:bg-primary/10"
-                          />
-                        )
-                      })}
-                    </div>
-                  )
-                })}
-              </div>
-            </ScrollArea>
+
+                            const allAvailable = allAvailableDates.has(day.date)
+                            return (
+                              <button
+                                key={`${day.date}-${minute}`}
+                                type="button"
+                                onClick={() =>
+                                  handleFreeSlotClick(
+                                    room,
+                                    day.label,
+                                    day.date,
+                                    minute
+                                  )
+                                }
+                                className={cn(
+                                  "h-5 border-r border-b border-border/60 transition-colors hover:bg-primary/10",
+                                  allAvailable ? "bg-emerald-500/15" : "bg-background"
+                                )}
+                              />
+                            )
+                          })}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+                </div>
+              </>
+            ) : (
+              <p className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+                조건에 맞는 회의실이 없습니다.
+              </p>
+            )}
           </div>
         </div>
       </div>
