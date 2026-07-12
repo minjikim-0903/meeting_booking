@@ -1,7 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { useSession } from "next-auth/react"
+import { useEffect, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,6 +12,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { formatDayLabel } from "@/lib/mock-data"
+import {
+  getInboxForEmail,
+  getRespondedInvitesForEmail,
+  respondToInvitee,
+  type InboxItem,
+} from "@/lib/mock-booking-store"
+import { MOCK_USER } from "@/lib/mock-session"
 
 const REJECT_REASONS = [
   "다른 일정과 겹침",
@@ -20,30 +26,6 @@ const REJECT_REASONS = [
   "직접 참석이 어려움",
   "기타",
 ]
-
-type InboxInvitee = {
-  id: string
-  requestId: string
-  email: string
-  name: string
-  status: string
-  rejectReason: string | null
-  respondedAt: string | null
-  request: {
-    id: string
-    roomId: string
-    roomName: string
-    date: string
-    startMinutes: number
-    endMinutes: number
-    title: string
-    purpose: string
-    organizerEmail: string
-    organizerName: string
-    status: string
-    createdAt: string
-  }
-}
 
 function minutesToLabel(minutes: number): string {
   const h = Math.floor(minutes / 60)
@@ -58,149 +40,205 @@ function parseLocalDate(dateStr: string): Date {
 }
 
 export default function RequestsPage() {
-  const { status } = useSession()
-  const [invites, setInvites] = useState<InboxInvitee[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [respondingId, setRespondingId] = useState<string | null>(null)
+  // localStorage 목업 데이터는 서버에 없으므로, 초기값은 빈 배열로 두고
+  // 마운트 이후(useEffect)에 클라이언트에서만 채운다 — 그렇지 않으면 서버
+  // 렌더링(빈 목록)과 클라이언트 첫 렌더링(실제 값) 결과가 달라 hydration
+  // 오류가 난다.
+  const [invites, setInvites] = useState<InboxItem[]>([])
+  const [pastInvites, setPastInvites] = useState<InboxItem[]>([])
   const [rejectingId, setRejectingId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState<string>("")
 
-  // No setState before the first `await` here, so this is safe to call
-  // directly from the mount effect below (as well as from the manual
-  // refresh button).
-  const fetchInbox = useCallback(async () => {
-    try {
-      const res = await fetch("/api/booking-requests/inbox")
-      if (!res.ok) {
-        throw new Error("받은 요청을 불러오지 못했습니다.")
-      }
-      const data = (await res.json()) as InboxInvitee[]
-      setInvites(data)
-      setError(null)
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "받은 요청을 불러오지 못했습니다."
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (status !== "authenticated") return
-
-    let ignore = false
-    async function loadInbox() {
-      try {
-        const res = await fetch("/api/booking-requests/inbox")
-        if (!res.ok) {
-          throw new Error("받은 요청을 불러오지 못했습니다.")
-        }
-        const data = (await res.json()) as InboxInvitee[]
-        if (!ignore) {
-          setInvites(data)
-          setError(null)
-        }
-      } catch (err) {
-        if (!ignore) {
-          setError(
-            err instanceof Error ? err.message : "받은 요청을 불러오지 못했습니다."
-          )
-        }
-      } finally {
-        if (!ignore) setLoading(false)
-      }
-    }
-    loadInbox()
-
-    return () => {
-      ignore = true
-    }
-  }, [status])
-
   function handleRefresh() {
-    setLoading(true)
-    fetchInbox()
+    setInvites(getInboxForEmail(MOCK_USER.email))
+    setPastInvites(getRespondedInvitesForEmail(MOCK_USER.email))
   }
 
-  async function respond(
+  useEffect(() => {
+    // localStorage는 클라이언트에만 존재하므로 마운트 후 한 번만 읽어온다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    handleRefresh()
+  }, [])
+
+  function respond(
     inviteeId: string,
     body: { status: "accepted" | "rejected"; rejectReason?: string }
   ) {
-    setRespondingId(inviteeId)
-    setError(null)
-    try {
-      const res = await fetch(
-        `/api/booking-requests/invitees/${inviteeId}/respond`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }
-      )
-      if (!res.ok) {
-        throw new Error("응답을 처리하지 못했습니다.")
-      }
-      setInvites((prev) => prev.filter((invite) => invite.id !== inviteeId))
-      setRejectingId(null)
-      setRejectReason("")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "응답을 처리하지 못했습니다.")
-    } finally {
-      setRespondingId(null)
-    }
+    respondToInvitee(inviteeId, body.status, body.rejectReason)
+    setInvites((prev) => prev.filter((invite) => invite.id !== inviteeId))
+    setPastInvites(getRespondedInvitesForEmail(MOCK_USER.email))
+    setRejectingId(null)
+    setRejectReason("")
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-lg font-semibold tracking-tight">받은 요청</h1>
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={loading || status !== "authenticated"}
-        >
+        <Button variant="outline" onClick={handleRefresh}>
           새로고침
         </Button>
       </header>
 
-      {status === "loading" && (
-        <p className="text-sm text-muted-foreground">불러오는 중...</p>
-      )}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">
+          요청 온 미팅
+        </h2>
 
-      {status === "unauthenticated" && (
-        <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          로그인이 필요합니다.
-        </p>
-      )}
+        {invites.length === 0 && (
+          <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            응답을 기다리는 요청이 없습니다.
+          </p>
+        )}
 
-      {status === "authenticated" && (
-        <>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="flex flex-col gap-3">
+          {invites.map((invite) => {
+            const { request } = invite
+            const isRejecting = rejectingId === invite.id
 
-          {!loading && invites.length === 0 && !error && (
-            <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              받은 요청이 없습니다.
-            </p>
-          )}
+            return (
+              <div
+                key={invite.id}
+                className="flex flex-col gap-2 rounded-md border p-4"
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-base font-semibold">
+                    {request.purpose}
+                  </span>
+                  <Badge variant="outline">{request.roomName}</Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {formatDayLabel(parseLocalDate(request.date))} ·{" "}
+                  {minutesToLabel(request.startMinutes)}
+                  {"~"}
+                  {minutesToLabel(request.endMinutes)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  예약자: {request.organizerName} ({request.organizerEmail})
+                </p>
 
+                {isRejecting ? (
+                  <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+                    <Select
+                      value={rejectReason || undefined}
+                      onValueChange={(value) =>
+                        value && setRejectReason(value as string)
+                      }
+                    >
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="거절 사유 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {REJECT_REASONS.map((reason) => (
+                          <SelectItem key={reason} value={reason}>
+                            {reason}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="destructive"
+                      disabled={!rejectReason}
+                      onClick={() =>
+                        respond(invite.id, {
+                          status: "rejected",
+                          rejectReason,
+                        })
+                      }
+                    >
+                      거절 확정
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setRejectingId(null)
+                        setRejectReason("")
+                      }}
+                    >
+                      취소
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 border-t pt-2">
+                    <Button
+                      onClick={() => respond(invite.id, { status: "accepted" })}
+                    >
+                      수락
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setRejectingId(invite.id)
+                        setRejectReason("")
+                      }}
+                    >
+                      거절
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">
+          지난 미팅
+        </h2>
+
+        {pastInvites.length === 0 ? (
+          <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+            수락하거나 거절한 요청이 없습니다.
+          </p>
+        ) : (
           <div className="flex flex-col gap-3">
-            {invites.map((invite) => {
+            {pastInvites.map((invite) => {
               const { request } = invite
-              const isBusy = respondingId === invite.id
               const isRejecting = rejectingId === invite.id
-
               return (
                 <div
                   key={invite.id}
                   className="flex flex-col gap-2 rounded-md border p-4"
                 >
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-sm font-semibold">
-                      {request.title}
-                    </span>
-                    <Badge variant="outline">{request.roomName}</Badge>
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-base font-semibold">
+                        {request.purpose}
+                      </span>
+                      <Badge variant="outline">{request.roomName}</Badge>
+                      <Badge
+                        variant={
+                          invite.status === "accepted" ? "default" : "secondary"
+                        }
+                      >
+                        {invite.status === "accepted" ? "수락함" : "거절함"}
+                      </Badge>
+                    </div>
+
+                    {!isRejecting &&
+                      (invite.status === "accepted" ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setRejectingId(invite.id)
+                            setRejectReason("")
+                          }}
+                        >
+                          거절로 변경
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            respond(invite.id, { status: "accepted" })
+                          }
+                        >
+                          수락으로 변경
+                        </Button>
+                      ))}
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {formatDayLabel(parseLocalDate(request.date))} ·{" "}
@@ -209,13 +247,15 @@ export default function RequestsPage() {
                     {minutesToLabel(request.endMinutes)}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    목적: {request.purpose}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
                     예약자: {request.organizerName} ({request.organizerEmail})
                   </p>
+                  {invite.status === "rejected" && invite.rejectReason && (
+                    <p className="text-sm text-muted-foreground">
+                      거절 사유: {invite.rejectReason}
+                    </p>
+                  )}
 
-                  {isRejecting ? (
+                  {isRejecting && (
                     <div className="flex flex-wrap items-center gap-2 border-t pt-2">
                       <Select
                         value={rejectReason || undefined}
@@ -236,7 +276,7 @@ export default function RequestsPage() {
                       </Select>
                       <Button
                         variant="destructive"
-                        disabled={!rejectReason || isBusy}
+                        disabled={!rejectReason}
                         onClick={() =>
                           respond(invite.id, {
                             status: "rejected",
@@ -244,7 +284,7 @@ export default function RequestsPage() {
                           })
                         }
                       >
-                        거절 확정
+                        거절로 변경 확정
                       </Button>
                       <Button
                         variant="outline"
@@ -256,32 +296,13 @@ export default function RequestsPage() {
                         취소
                       </Button>
                     </div>
-                  ) : (
-                    <div className="flex items-center gap-2 border-t pt-2">
-                      <Button
-                        disabled={isBusy}
-                        onClick={() => respond(invite.id, { status: "accepted" })}
-                      >
-                        수락
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={isBusy}
-                        onClick={() => {
-                          setRejectingId(invite.id)
-                          setRejectReason("")
-                        }}
-                      >
-                        거절
-                      </Button>
-                    </div>
                   )}
                 </div>
               )
             })}
           </div>
-        </>
-      )}
+        )}
+      </section>
     </div>
   )
 }

@@ -1,8 +1,8 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { signIn, signOut, useSession } from "next-auth/react"
 import {
   Building2,
   CalendarClock,
@@ -13,8 +13,9 @@ import {
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { getInboxForEmail, STORE_UPDATED_EVENT } from "@/lib/mock-booking-store"
+import { MOCK_USER } from "@/lib/mock-session"
 
 type MenuItem = {
   label: string
@@ -34,7 +35,16 @@ const MENU_ITEMS: MenuItem[] = [
 
 export function SidebarNav() {
   const pathname = usePathname()
-  const { data: session, status } = useSession()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    function refresh() {
+      setPendingCount(getInboxForEmail(MOCK_USER.email).length)
+    }
+    refresh()
+    window.addEventListener(STORE_UPDATED_EVENT, refresh)
+    return () => window.removeEventListener(STORE_UPDATED_EVENT, refresh)
+  }, [])
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col gap-1 overflow-hidden border-r bg-background p-4">
@@ -76,48 +86,29 @@ export function SidebarNav() {
               )}
             >
               <Icon className="size-4" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.label === "받은 요청" && pendingCount > 0 && (
+                <span className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-white">
+                  {pendingCount}
+                </span>
+              )}
             </Link>
           )
         })}
       </nav>
 
       <div className="mt-auto border-t pt-3">
-        {status === "loading" ? (
-          <div className="h-9" />
-        ) : session?.user ? (
-          <div className="flex items-center gap-2 px-2">
-            {session.user.image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={session.user.image}
-                alt={session.user.name ?? session.user.email ?? "사용자"}
-                className="size-8 shrink-0 rounded-full"
-              />
-            ) : (
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                {(session.user.name ?? session.user.email ?? "?")
-                  .slice(0, 1)
-                  .toUpperCase()}
-              </div>
-            )}
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-sm font-medium">
-                {session.user.name ?? session.user.email}
-              </span>
-              <button
-                onClick={() => signOut()}
-                className="text-left text-xs text-muted-foreground hover:underline"
-              >
-                로그아웃
-              </button>
-            </div>
+        <div className="flex items-center gap-2 px-2">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+            {MOCK_USER.name.slice(0, 1).toUpperCase()}
           </div>
-        ) : (
-          <Button className="w-full" onClick={() => signIn("google")}>
-            Google로 로그인
-          </Button>
-        )}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-sm font-medium">{MOCK_USER.name}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {MOCK_USER.email}
+            </span>
+          </div>
+        </div>
       </div>
     </aside>
   )

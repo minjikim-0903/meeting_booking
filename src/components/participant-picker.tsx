@@ -1,7 +1,6 @@
 "use client"
 
 import { useMemo } from "react"
-import { useSession } from "next-auth/react"
 
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { people, TEAM_COLOR, type Team } from "@/lib/mock-participants"
+import { MOCK_USER } from "@/lib/mock-session"
 
 export const ALL_TEAMS = "전체"
 
@@ -44,8 +44,6 @@ export function ParticipantPicker({
   selectedParticipantIds,
   onToggleParticipant,
 }: ParticipantPickerProps) {
-  const { data: session } = useSession()
-
   const filteredPeople = useMemo(() => {
     const query = search.trim().toLowerCase()
     return people.filter((person) => {
@@ -63,23 +61,20 @@ export function ParticipantPicker({
     })
   }, [selectedTeam, search])
 
-  // "나 (현재 로그인 계정)" is a synthetic entry (id "me") for the signed-in
-  // session user, not part of the mock `people` roster. It's never filtered
+  // "나 (현재 로그인 계정)" is a synthetic entry (id "me") for the current
+  // (mock) user, not part of the mock `people` roster. It's never filtered
   // out by team (it has no `Team`), only by search text.
   const meEntry = useMemo(() => {
-    if (!session?.user) return null
     const query = search.trim().toLowerCase()
-    const name = session.user.name ?? session.user.email ?? "나"
-    const email = session.user.email ?? ""
     if (
       query &&
-      !name.toLowerCase().includes(query) &&
-      !email.toLowerCase().includes(query)
+      !MOCK_USER.name.toLowerCase().includes(query) &&
+      !MOCK_USER.email.toLowerCase().includes(query)
     ) {
       return null
     }
-    return { name, email }
-  }, [session, search])
+    return { name: MOCK_USER.name, email: MOCK_USER.email }
+  }, [search])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -157,7 +152,15 @@ export function ParticipantPicker({
                   />
                   <span className="flex flex-1 flex-col gap-0.5 overflow-hidden">
                     <span className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "size-2 shrink-0 rounded-full",
+                          TEAM_COLOR[MOCK_USER.team].dot
+                        )}
+                        title={MOCK_USER.team}
+                      />
                       <span className="text-sm font-medium">{meEntry.name}</span>
+                      <Badge variant="outline">{MOCK_USER.role}</Badge>
                       <Badge variant="default">나</Badge>
                     </span>
                     <span className="truncate text-xs text-muted-foreground">

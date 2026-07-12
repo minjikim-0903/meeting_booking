@@ -1,12 +1,12 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { useSession } from "next-auth/react"
+import { useEffect, useMemo, useState } from "react"
 import type { DateRange } from "react-day-picker"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogClose,
@@ -48,6 +48,15 @@ import {
   type Role,
   type Team,
 } from "@/lib/mock-participants"
+import { MOCK_USER } from "@/lib/mock-session"
+import {
+  cancelBookingRequest,
+  createBookingRequest,
+  getActiveRequestsForRoom,
+  getInviteesForRequest,
+  STORE_UPDATED_EVENT,
+  type MockBookingRequest,
+} from "@/lib/mock-booking-store"
 
 const AVAILABILITY_LABEL: Record<AvailabilityStatus, string> = {
   available: "가능",
@@ -85,8 +94,26 @@ function findBooking(
   )
 }
 
+function findActiveRequest(
+  activeRequests: MockBookingRequest[],
+  date: string,
+  minute: number
+): MockBookingRequest | undefined {
+  return activeRequests.find(
+    (r) => r.date === date && minute >= r.startMinutes && minute < r.endMinutes
+  )
+}
+
 function getOrganizer(booking: Booking): Person | undefined {
   return people.find((p) => p.id === booking.organizerId)
+}
+
+/** Resolves a booking-request organizer's team by email — checks the mock roster, then the current mock user. */
+function getOrganizerTeamByEmail(email: string): Team | undefined {
+  return (
+    people.find((p) => p.email === email)?.team ??
+    (email === MOCK_USER.email ? MOCK_USER.team : undefined)
+  )
 }
 
 function getAttendees(booking: Booking): Person[] {
@@ -115,16 +142,14 @@ type SlotSelection = {
   room: Room
   date: string
   dateLabel: string
-  timeLabel: string
   startMinutes: number
   endMinutes: number
 }
 
-/** A selectable invitee: either a mock `Person` or the synthetic "me" (logged-in session user), which has no `Team`/`Role`. */
+/** A selectable invitee: either a mock `Person` or the synthetic "me" (current mock user), which has no `Team`/`Role`. */
 type Invitee = Omit<Person, "team" | "role"> & { team?: Team; role?: Role }
 
 export function RoomSchedule() {
-  const { data: session } = useSession()
   const [selectedRoomId, setSelectedRoomId] = useState(rooms[0]?.id)
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() =>
     getDefaultDateRange()
@@ -132,6 +157,7 @@ export function RoomSchedule() {
   const [selection, setSelection] = useState<SlotSelection | null>(null)
   const [bookingList, setBookingList] = useState<Booking[]>(() => seedBookings)
   const [infoBooking, setInfoBooking] = useState<Booking | null>(null)
+  const [infoRequest, setInfoRequest] = useState<MockBookingRequest | null>(null)
   const [reschedulingBooking, setReschedulingBooking] = useState<Booking | null>(
     null
   )
@@ -144,27 +170,31 @@ export function RoomSchedule() {
 
   const [selectedTeam, setSelectedTeam] = useState<string>(ALL_TEAMS)
   const [participantSearch, setParticipantSearch] = useState("")
+  // 예약자(나)는 항상 자신이 초대한 회의의 참석자이기도 하므로 기본 선택.
   const [selectedParticipantIds, setSelectedParticipantIds] = useState<
     Set<string>
-  >(() => new Set())
+  >(() => new Set(["me"]))
 
   const selectedPeople = useMemo<Invitee[]>(() => {
     const selected: Invitee[] = people.filter((person) =>
       selectedParticipantIds.has(person.id)
     )
-    if (selectedParticipantIds.has("me") && session?.user) {
-      selected.push({
+    // 예약자(나)는 항상 목록 최상단에 오도록 앞에 추가한다.
+    if (selectedParticipantIds.has("me")) {
+      selected.unshift({
         id: "me",
-        name: session.user.name ?? session.user.email ?? "나",
-        email: session.user.email ?? "",
+        name: MOCK_USER.name,
+        email: MOCK_USER.email,
+        role: MOCK_USER.role,
+        team: MOCK_USER.team,
       })
     }
     return selected
-  }, [selectedParticipantIds, session])
+  }, [selectedParticipantIds])
 
   const [requestSubmitting, setRequestSubmitting] = useState(false)
   const [requestError, setRequestError] = useState<string | null>(null)
-  const [requestSent, setRequestSent] = useState(false)
+  const [meetingPurpose, setMeetingPurpose] = useState("")
 
   function toggleParticipant(personId: string, checked: boolean) {
     setSelectedParticipantIds((prev) => {
@@ -193,12 +223,31 @@ export function RoomSchedule() {
 
   const room = rooms.find((r) => r.id === selectedRoomId) ?? rooms[0]
 
+  // 응답 대기 중이거나 전원 수락되어 확정된 예약 요청을 달력에 표시한다.
+  // (대기중이면 재요청을 막고, 확정되면 일반 예약처럼 보여준다.) localStorage
+  // 기반 목업 스토어라 다른 탭/컴포넌트에서 바뀐 값을 반영하려면 커스텀
+  // 이벤트를 구독해야 한다.
+  const [activeRequests, setActiveRequests] = useState<MockBookingRequest[]>(
+    []
+  )
+  useEffect(() => {
+    function refresh() {
+      setActiveRequests(getActiveRequestsForRoom(room.id))
+    }
+    refresh()
+    window.addEventListener(STORE_UPDATED_EVENT, refresh)
+    return () => window.removeEventListener(STORE_UPDATED_EVENT, refresh)
+  }, [room.id])
+
   const weekdays = useMemo(() => {
     if (dateRange?.from && dateRange?.to) {
       return getDateRangeDays(dateRange.from, dateRange.to)
     }
     return getNextWeekdays()
   }, [dateRange])
+
+  // 지난 날짜는 회의실 예약이 불가능하므로 비활성화 기준으로 쓴다.
+  const todayISO = useMemo(() => formatLocalISODate(new Date()), [])
 
   // "전원 가능" highlighting is per time slot (not day-level): a free slot is
   // highlighted only when every selected participant is available at that
@@ -223,6 +272,44 @@ export function RoomSchedule() {
     [reschedulingDuration]
   )
 
+  // Start-time choices: from the day start (or right after the nearest
+  // earlier booking on that room/date) up to just before the current end.
+  const selectionStartOptions = useMemo(() => {
+    if (!selection) return []
+    const minStart = bookingList
+      .filter(
+        (b) =>
+          b.roomId === selection.room.id &&
+          b.date === selection.date &&
+          b.endMinutes <= selection.endMinutes
+      )
+      .reduce((max, b) => Math.max(max, b.endMinutes), TIME_SLOTS[0])
+    const opts: number[] = []
+    for (let m = minStart; m <= selection.endMinutes - 10; m += 10) {
+      opts.push(m)
+    }
+    return opts
+  }, [selection, bookingList])
+
+  // End-time choices: from just after the current start up to (but not
+  // overlapping) the next booking on that room/date.
+  const selectionEndOptions = useMemo(() => {
+    if (!selection) return []
+    const maxEnd = bookingList
+      .filter(
+        (b) =>
+          b.roomId === selection.room.id &&
+          b.date === selection.date &&
+          b.startMinutes > selection.startMinutes
+      )
+      .reduce((min, b) => Math.min(min, b.startMinutes), RESCHEDULE_DAY_END_MINUTES)
+    const opts: number[] = []
+    for (let m = selection.startMinutes + 10; m <= maxEnd; m += 10) {
+      opts.push(m)
+    }
+    return opts
+  }, [selection, bookingList])
+
   function handleBookedSlotClick(booking: Booking) {
     setInfoBooking(booking)
     setCoordinationMessage("")
@@ -232,6 +319,46 @@ export function RoomSchedule() {
   function handleCancelBooking(bookingId: string) {
     setBookingList((prev) => prev.filter((b) => b.id !== bookingId))
     setInfoBooking(null)
+  }
+
+  function handleCancelRequest(requestId: string) {
+    cancelBookingRequest(requestId)
+    setActiveRequests((prev) => prev.filter((r) => r.id !== requestId))
+    setInfoRequest(null)
+  }
+
+  /** "일정 변경": 기존 요청을 취소하고, 같은 값으로 예약 요청 화면을 다시 띄워 재요청하게 한다. */
+  function handleEditRequest(request: MockBookingRequest) {
+    const editRoom = rooms.find((r) => r.id === request.roomId)
+    if (!editRoom) return
+
+    const invitees = getInviteesForRequest(request.id)
+    const ids = new Set<string>()
+    for (const invitee of invitees) {
+      if (invitee.email === MOCK_USER.email) {
+        ids.add("me")
+        continue
+      }
+      const person = people.find((p) => p.email === invitee.email)
+      if (person) ids.add(person.id)
+    }
+
+    cancelBookingRequest(request.id)
+    setActiveRequests((prev) => prev.filter((r) => r.id !== request.id))
+
+    setSelectedRoomId(editRoom.id)
+    setSelectedParticipantIds(ids)
+    setMeetingPurpose(request.purpose)
+    setRequestSubmitting(false)
+    setRequestError(null)
+    setInfoRequest(null)
+    setSelection({
+      room: editRoom,
+      date: request.date,
+      dateLabel: formatDayLabel(parseLocalDate(request.date)),
+      startMinutes: request.startMinutes,
+      endMinutes: request.endMinutes,
+    })
   }
 
   function handleSubmitCoordinationRequest() {
@@ -271,22 +398,29 @@ export function RoomSchedule() {
   }
 
   function isOwnBooking(booking: Booking): boolean {
-    if (!session?.user?.email) return false
-    return getOrganizer(booking)?.email === session.user.email
+    return getOrganizer(booking)?.email === MOCK_USER.email
+  }
+
+  /** Earliest booking start after `afterMinute` for this room/date, capped at the day boundary — used to cap how long a new booking can run before it would overlap the next one. */
+  function getMaxEndMinutes(roomId: string, date: string, afterMinute: number): number {
+    return bookingList
+      .filter(
+        (b) => b.roomId === roomId && b.date === date && b.startMinutes > afterMinute
+      )
+      .reduce((min, b) => Math.min(min, b.startMinutes), RESCHEDULE_DAY_END_MINUTES)
   }
 
   function handleFreeSlotClick(room: Room, dateLabel: string, date: string, minute: number) {
-    const timeLabel = `${minutesToLabel(minute)} ~ ${minutesToLabel(minute + 10)}`
+    const maxEnd = getMaxEndMinutes(room.id, date, minute)
     setRequestSubmitting(false)
     setRequestError(null)
-    setRequestSent(false)
+    setMeetingPurpose("")
     setSelection({
       room,
       date,
       dateLabel,
-      timeLabel,
       startMinutes: minute,
-      endMinutes: minute + 10,
+      endMinutes: Math.min(minute + 30, maxEnd),
     })
   }
 
@@ -294,42 +428,31 @@ export function RoomSchedule() {
     setSelection(null)
     setRequestSubmitting(false)
     setRequestError(null)
-    setRequestSent(false)
   }
 
   async function handleSubmitBookingRequest() {
-    if (!selection || !session?.user || selectedPeople.length === 0) return
+    const purpose = meetingPurpose.trim()
+    if (!selection || selectedPeople.length === 0 || !purpose) return
 
     setRequestSubmitting(true)
     setRequestError(null)
     try {
-      const res = await fetch("/api/booking-requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          roomId: selection.room.id,
-          roomName: selection.room.name,
-          date: selection.date,
-          startMinutes: selection.startMinutes,
-          endMinutes: selection.endMinutes,
-          title: `${selection.room.name} 예약 요청`,
-          purpose: "회의",
-          invitees: selectedPeople.map((person) => ({
-            email: person.email,
-            name: person.name,
-          })),
-        }),
+      createBookingRequest({
+        roomId: selection.room.id,
+        roomName: selection.room.name,
+        date: selection.date,
+        startMinutes: selection.startMinutes,
+        endMinutes: selection.endMinutes,
+        title: `${selection.room.name} 예약 요청`,
+        purpose,
+        organizerEmail: MOCK_USER.email,
+        organizerName: MOCK_USER.name,
+        invitees: selectedPeople.map((person) => ({
+          email: person.email,
+          name: person.name,
+        })),
       })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(
-          (data as { error?: string } | null)?.error ??
-            "예약 요청을 보내지 못했습니다."
-        )
-      }
-
-      setRequestSent(true)
+      closeSelection()
     } catch (err) {
       setRequestError(
         err instanceof Error ? err.message : "예약 요청을 보내지 못했습니다."
@@ -367,14 +490,9 @@ export function RoomSchedule() {
                         <span>
                           {r.name} · {r.capacity}인
                         </span>
-                        <span className="flex items-center gap-1">
-                          <Badge variant={r.hasMonitor ? "default" : "secondary"}>
-                            모니터 {r.hasMonitor ? "있음" : "없음"}
-                          </Badge>
-                          <Badge variant={r.hasVideoEquipment ? "default" : "secondary"}>
-                            화상 {r.hasVideoEquipment ? "가능" : "불가"}
-                          </Badge>
-                        </span>
+                        <Badge variant={r.hasMonitor ? "default" : "secondary"}>
+                          모니터 {r.hasMonitor ? "있음" : "없음"}
+                        </Badge>
                       </div>
                     </SelectItem>
                   ))}
@@ -432,7 +550,10 @@ export function RoomSchedule() {
                       {weekdays.map((day) => (
                         <div
                           key={day.date}
-                          className="sticky top-0 z-20 flex h-8 items-center justify-center border-b bg-background text-xs font-medium"
+                          className={cn(
+                            "sticky top-0 z-20 flex h-8 items-center justify-center border-b bg-background text-xs font-medium",
+                            day.date < todayISO && "text-muted-foreground/40"
+                          )}
                         >
                           {day.label}
                         </div>
@@ -498,11 +619,81 @@ export function RoomSchedule() {
                               )
                             }
 
+                            const activeRequest = findActiveRequest(
+                              activeRequests,
+                              day.date,
+                              minute
+                            )
+                            if (activeRequest) {
+                              const isFirstSlot =
+                                minute === activeRequest.startMinutes
+                              const requestTeam = getOrganizerTeamByEmail(
+                                activeRequest.organizerEmail
+                              )
+                              const isPending = activeRequest.status === "pending"
+                              const isMine =
+                                activeRequest.organizerEmail === MOCK_USER.email
+                              const cellClass = isPending
+                                ? "bg-[repeating-linear-gradient(45deg,theme(colors.amber.400/25),theme(colors.amber.400/25)_4px,transparent_4px,transparent_8px)]"
+                                : requestTeam
+                                  ? isMine
+                                    ? TEAM_COLOR[requestTeam].blockMine
+                                    : TEAM_COLOR[requestTeam].block
+                                  : "bg-destructive/15 hover:bg-destructive/25"
+                              return (
+                                <Tooltip key={`${day.date}-${minute}`}>
+                                  <TooltipTrigger
+                                    render={
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setInfoRequest(activeRequest)
+                                        }
+                                        className={cn(
+                                          "relative h-5 border-r border-b border-border/60 transition-colors",
+                                          cellClass
+                                        )}
+                                      >
+                                        {isFirstSlot && (
+                                          <span
+                                            className={cn(
+                                              "absolute inset-x-0 top-0 z-10 truncate px-1 text-left text-[9px] leading-[14px] font-medium",
+                                              isPending
+                                                ? "text-amber-800 dark:text-amber-300"
+                                                : "text-foreground/80",
+                                              isMine && "font-bold text-foreground"
+                                            )}
+                                          >
+                                            {isPending ? "대기중 · " : ""}
+                                            {isMine ? "내 예약" : requestTeam ?? activeRequest.organizerName}{" "}
+                                            {minutesToLabel(activeRequest.startMinutes)}
+                                            {"~"}
+                                            {minutesToLabel(activeRequest.endMinutes)}
+                                          </span>
+                                        )}
+                                      </button>
+                                    }
+                                  />
+                                  <TooltipContent>
+                                    {activeRequest.purpose} · {requestTeam}{" "}
+                                    {activeRequest.organizerName} ·{" "}
+                                    {isPending ? "응답 대기중" : "확정됨"} ·{" "}
+                                    {minutesToLabel(activeRequest.startMinutes)}
+                                    {"~"}
+                                    {minutesToLabel(activeRequest.endMinutes)}
+                                  </TooltipContent>
+                                </Tooltip>
+                              )
+                            }
+
                             const allAvailable = isAllAvailable(day.date, minute)
+                            const isPast = day.date < todayISO
                             return (
                               <button
                                 key={`${day.date}-${minute}`}
                                 type="button"
+                                disabled={isPast}
+                                title={isPast ? "지난 날짜는 예약할 수 없습니다" : undefined}
                                 onClick={() =>
                                   handleFreeSlotClick(
                                     room,
@@ -512,8 +703,13 @@ export function RoomSchedule() {
                                   )
                                 }
                                 className={cn(
-                                  "h-5 border-r border-b border-border/60 transition-colors hover:bg-primary/10",
-                                  allAvailable ? "bg-emerald-500/15" : "bg-background"
+                                  "h-5 border-r border-b border-border/60 transition-colors",
+                                  isPast
+                                    ? "cursor-not-allowed bg-muted/50"
+                                    : cn(
+                                        "hover:bg-primary/10",
+                                        allAvailable ? "bg-emerald-500/15" : "bg-background"
+                                      )
                                 )}
                               />
                             )
@@ -640,6 +836,73 @@ export function RoomSchedule() {
       </Dialog>
 
       <Dialog
+        open={infoRequest !== null}
+        onOpenChange={(open) => !open && setInfoRequest(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {infoRequest?.status === "pending" ? "예약 요청 정보" : "예약 확정 정보"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {infoRequest && (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-medium">{infoRequest.purpose}</span>
+                <span className="text-sm text-muted-foreground">
+                  {infoRequest.status === "pending" ? "응답 대기중" : "예약 확정됨"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-sm">
+                {getOrganizerTeamByEmail(infoRequest.organizerEmail) && (
+                  <Badge variant="outline">
+                    {getOrganizerTeamByEmail(infoRequest.organizerEmail)}
+                  </Badge>
+                )}
+                <span className="font-medium">{infoRequest.organizerName}</span>
+                <span className="text-xs text-muted-foreground">예약자</span>
+              </div>
+
+              <p className="text-sm text-muted-foreground">
+                {infoRequest.roomName} ·{" "}
+                {formatDayLabel(parseLocalDate(infoRequest.date))} ·{" "}
+                {minutesToLabel(infoRequest.startMinutes)}
+                {"~"}
+                {minutesToLabel(infoRequest.endMinutes)}
+              </p>
+
+              {infoRequest.organizerEmail !== MOCK_USER.email && (
+                <p className="text-xs text-muted-foreground">
+                  다른 사람이 예약한 요청이라 직접 취소할 수 없습니다.
+                </p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            {infoRequest && infoRequest.organizerEmail === MOCK_USER.email && (
+              <>
+                <Button
+                  variant="destructive"
+                  onClick={() => handleCancelRequest(infoRequest.id)}
+                >
+                  {infoRequest.status === "pending" ? "요청 취소" : "예약 취소"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleEditRequest(infoRequest)}
+                >
+                  일정 변경
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={reschedulingBooking !== null}
         onOpenChange={(open) => !open && setReschedulingBooking(null)}
       >
@@ -719,28 +982,104 @@ export function RoomSchedule() {
           <DialogHeader>
             <DialogTitle>예약 요청</DialogTitle>
             <DialogDescription>
-              {selection && (
-                <>
-                  {selection.room.name} · {selection.dateLabel} · {selection.timeLabel}
-                  <br />
-                  참석자에게 예약 요청을 보내고, 전원이 수락하면 예약이 확정됩니다.
-                </>
-              )}
+              참석자에게 예약 요청을 보내고, 전원이 수락하면 예약이 확정됩니다.
             </DialogDescription>
           </DialogHeader>
 
-          {selection && requestSent ? (
-            <p className="rounded-md border border-dashed p-4 text-center text-sm text-primary">
-              예약 요청을 보냈습니다.
-            </p>
-          ) : (
-            selection && (
+          {selection && (
               <div className="flex flex-col gap-2">
-                <p className="text-sm text-muted-foreground">
-                  {session?.user
-                    ? `예약자: ${session.user.name} (${session.user.email})`
-                    : "예약자: 로그인이 필요합니다"}
-                </p>
+                <div className="flex flex-col gap-1 rounded-md border bg-muted/40 p-2 text-sm">
+                  <p>
+                    회의실: <span className="font-semibold">{selection.room.name}</span>
+                  </p>
+                  <p>
+                    날짜/시간:{" "}
+                    <span className="font-semibold">
+                      {selection.dateLabel} · {minutesToLabel(selection.startMinutes)}
+                      {"~"}
+                      {minutesToLabel(selection.endMinutes)}
+                    </span>
+                  </p>
+                  <p>
+                    예약자:{" "}
+                    <span className="font-semibold">
+                      {MOCK_USER.name} ({MOCK_USER.email})
+                    </span>
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    회의 목적 <span className="text-destructive">*</span>
+                  </span>
+                  <Input
+                    type="text"
+                    placeholder="예: 주간 스프린트 회고 (필수)"
+                    value={meetingPurpose}
+                    onChange={(e) => setMeetingPurpose(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex items-end gap-2">
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      시작 시간
+                    </span>
+                    <Select
+                      value={String(selection.startMinutes)}
+                      onValueChange={(value) =>
+                        value &&
+                        setSelection((prev) =>
+                          prev ? { ...prev, startMinutes: Number(value) } : prev
+                        )
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue>
+                          {(value: string) => minutesToLabel(Number(value))}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectionStartOptions.map((minute) => (
+                          <SelectItem key={minute} value={String(minute)}>
+                            {minutesToLabel(minute)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <span className="pb-2 text-sm text-muted-foreground">~</span>
+
+                  <div className="flex flex-1 flex-col gap-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      종료 시간
+                    </span>
+                    <Select
+                      value={String(selection.endMinutes)}
+                      onValueChange={(value) =>
+                        value &&
+                        setSelection((prev) =>
+                          prev ? { ...prev, endMinutes: Number(value) } : prev
+                        )
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue>
+                          {(value: string) => minutesToLabel(Number(value))}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectionEndOptions.map((minute) => (
+                          <SelectItem key={minute} value={String(minute)}>
+                            {minutesToLabel(minute)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 <p className="text-sm font-medium">참석자 일정 확인</p>
                 {selectedPeople.length === 0 ? (
                   <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
@@ -786,31 +1125,28 @@ export function RoomSchedule() {
                 {requestError && (
                   <p className="text-sm text-destructive">{requestError}</p>
                 )}
-                {!(session?.user && selectedPeople.length > 0) && (
+                {selectedPeople.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    로그인하고 참석자를 선택해야 요청을 보낼 수 있습니다.
+                    참석자를 선택해야 요청을 보낼 수 있습니다.
                   </p>
                 )}
               </div>
-            )
           )}
 
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>
-              {requestSent ? "닫기" : "취소"}
+              취소
             </DialogClose>
-            {!requestSent && (
-              <Button
-                disabled={
-                  !session?.user ||
-                  selectedPeople.length === 0 ||
-                  requestSubmitting
-                }
-                onClick={handleSubmitBookingRequest}
-              >
-                {requestSubmitting ? "요청 보내는 중..." : "예약 요청"}
-              </Button>
-            )}
+            <Button
+              disabled={
+                selectedPeople.length === 0 ||
+                !meetingPurpose.trim() ||
+                requestSubmitting
+              }
+              onClick={handleSubmitBookingRequest}
+            >
+              {requestSubmitting ? "요청 보내는 중..." : "예약 요청"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
