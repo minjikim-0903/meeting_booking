@@ -601,9 +601,12 @@ export function RoomSchedule() {
 
                             if (booking) {
                               const organizer = getOrganizer(booking)
-                              const teamColor = organizer
-                                ? TEAM_COLOR[organizer.team].block
-                                : "bg-destructive/15 hover:bg-destructive/25"
+                              const isPastBooking = booking.date < todayISO
+                              const teamColor = isPastBooking
+                                ? "bg-neutral-500/40 hover:bg-neutral-500/40"
+                                : organizer
+                                  ? TEAM_COLOR[organizer.team].block
+                                  : "bg-destructive/15 hover:bg-destructive/25"
                               const isFirstSlot = minute === booking.startMinutes
                               return (
                                 <Tooltip key={`${day.date}-${minute}`}>
@@ -652,13 +655,16 @@ export function RoomSchedule() {
                               const isPending = activeRequest.status === "pending"
                               const isMine =
                                 activeRequest.organizerEmail === MOCK_USER.email
-                              const cellClass = isPending
-                                ? "bg-[repeating-linear-gradient(45deg,theme(colors.amber.400/25),theme(colors.amber.400/25)_4px,transparent_4px,transparent_8px)]"
-                                : requestTeam
-                                  ? isMine
-                                    ? TEAM_COLOR[requestTeam].blockMine
-                                    : TEAM_COLOR[requestTeam].block
-                                  : "bg-destructive/15 hover:bg-destructive/25"
+                              const isPastRequest = activeRequest.date < todayISO
+                              const cellClass = isPastRequest
+                                ? "bg-neutral-500/40 hover:bg-neutral-500/40"
+                                : isPending
+                                  ? "bg-[repeating-linear-gradient(45deg,theme(colors.amber.400/25),theme(colors.amber.400/25)_4px,transparent_4px,transparent_8px)]"
+                                  : requestTeam
+                                    ? isMine
+                                      ? TEAM_COLOR[requestTeam].blockMine
+                                      : TEAM_COLOR[requestTeam].block
+                                    : "bg-destructive/15 hover:bg-destructive/25"
                               return (
                                 <Tooltip key={`${day.date}-${minute}`}>
                                   <TooltipTrigger
